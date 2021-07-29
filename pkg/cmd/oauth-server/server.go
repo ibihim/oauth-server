@@ -33,7 +33,7 @@ func RunOsinServer(osinConfig *osinv1.OsinServerConfig, stopCh <-chan struct{}) 
 		return errors.New("osin server requires non-empty oauthConfig")
 	}
 
-	oauthServerConfig, err := newOAuthServerConfig(osinConfig)
+	oauthServerConfig, postStartHooks, err := newOAuthServerConfig(osinConfig)
 	if err != nil {
 		return err
 	}
@@ -43,20 +43,26 @@ func RunOsinServer(osinConfig *osinv1.OsinServerConfig, stopCh <-chan struct{}) 
 		return err
 	}
 
+	for hookname, hook := range postStartHooks {
+		if err := oauthServer.GenericAPIServer.AddPostStartHook(hookname, hook); err != nil {
+			return err
+		}
+	}
+
 	return oauthServer.GenericAPIServer.PrepareRun().Run(stopCh)
 }
 
-func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAuthServerConfig, error) {
+func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAuthServerConfig, map[string]genericapiserver.PostStartHookFunc, error) {
 	scheme := runtime.NewScheme()
 	metav1.AddToGroupVersion(scheme, corev1.SchemeGroupVersion)
 	genericConfig := genericapiserver.NewRecommendedConfig(serializer.NewCodecFactory(scheme))
 
 	servingOptions, err := serving.ToServingOptions(osinConfig.ServingInfo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := servingOptions.ApplyTo(&genericConfig.Config.SecureServing, &genericConfig.Config.LoopbackClientConfig); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// the oauth-server must only run in http1 to avoid http2 connection re-use problems when improperly re-using a wildcard certificate
 	genericConfig.Config.SecureServing.DisableHTTP2 = true
@@ -65,7 +71,7 @@ func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAu
 	authenticationOptions.ClientCert.ClientCA = osinConfig.ServingInfo.ClientCA
 	authenticationOptions.RemoteKubeConfigFile = osinConfig.KubeClientConfig.KubeConfig
 	if err := authenticationOptions.ApplyTo(&genericConfig.Authentication, genericConfig.SecureServing, genericConfig.OpenAPIConfig); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// These are paths for which we bypass kube authentication/authorization
@@ -83,13 +89,13 @@ func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAu
 		WithAlwaysAllowGroups(user.SystemPrivilegedGroup)
 	authorizationOptions.RemoteKubeConfigFile = osinConfig.KubeClientConfig.KubeConfig
 	if err := authorizationOptions.ApplyTo(&genericConfig.Authorization); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// set up a path authorizer so that we can check allowed paths in the authenticator below
 	pathAuthorizer, err := path.NewAuthorizer(alwaysAllowedPaths)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	anonymousAuthenticator := anonymous.NewAuthenticator()
@@ -114,12 +120,12 @@ func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAu
 	// TODO You need real overrides for rate limiting
 	kubeClientConfig, err := helpers.GetKubeConfigOrInClusterConfig(osinConfig.KubeClientConfig.KubeConfig, osinConfig.KubeClientConfig.ConnectionOverrides)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	oauthServerConfig, err := oauthserver.NewOAuthServerConfig(osinConfig.OAuthConfig, kubeClientConfig, genericConfig)
+	oauthServerConfig, postStartHooks, err := oauthserver.NewOAuthServerConfig(osinConfig.OAuthConfig, kubeClientConfig, genericConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// TODO you probably want to set this
@@ -127,5 +133,5 @@ func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAu
 	//oauthServerConfig.GenericConfig.AuditBackend = genericConfig.AuditBackend
 	//oauthServerConfig.GenericConfig.AuditPolicyChecker = genericConfig.AuditPolicyChecker
 
-	return oauthServerConfig, nil
+	return oauthServerConfig, postStartHooks, nil
 }

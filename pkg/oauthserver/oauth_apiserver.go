@@ -19,12 +19,17 @@ import (
 	authenticationv1client "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 
 	osinv1 "github.com/openshift/api/osin/v1"
 	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
 	routeclient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
-	userclient "github.com/openshift/client-go/user/clientset/versioned/typed/user/v1"
+	userclient "github.com/openshift/client-go/user/clientset/versioned"
+	userclientv1 "github.com/openshift/client-go/user/clientset/versioned/typed/user/v1"
+	userinformer "github.com/openshift/client-go/user/informers/externalversions"
+	userinformerv1 "github.com/openshift/client-go/user/informers/externalversions/user/v1"
 	bootstrap "github.com/openshift/library-go/pkg/authentication/bootstrapauthenticator"
+	"github.com/openshift/library-go/pkg/oauth/usercache"
 	"github.com/openshift/oauth-server/pkg/config"
 	"github.com/openshift/oauth-server/pkg/server/crypto"
 	"github.com/openshift/oauth-server/pkg/server/headers"
@@ -43,7 +48,7 @@ func init() {
 
 // TODO we need to switch the oauth server to an external type, but that can be done after we get our externally facing flag values fixed
 // TODO remaining bits involve the session file, LDAP util code, validation, ...
-func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest.Config, genericConfig *genericapiserver.RecommendedConfig) (*OAuthServerConfig, error) {
+func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest.Config, genericConfig *genericapiserver.RecommendedConfig) (*OAuthServerConfig, map[string]genericapiserver.PostStartHookFunc, error) {
 	// TODO: there is probably some better way to do this
 	decoder := codecs.UniversalDecoder(osinv1.GroupVersion)
 	for i, idp := range oauthConfig.IdentityProviders {
@@ -53,7 +58,7 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 		}
 		idpObject, err := runtime.Decode(decoder, idp.Provider.Raw)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		oauthConfig.IdentityProviders[i].Provider.Object = idpObject
 	}
@@ -67,23 +72,23 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 
 	userClient, err := userclient.NewForConfig(userClientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	oauthClient, err := oauthclient.NewForConfig(userClientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	eventsClient, err := corev1.NewForConfig(userClientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	routeClient, err := routeclient.NewForConfig(userClientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	kubeClient, err := kclientset.NewForConfig(userClientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	bootstrapUserDataGetter := bootstrap.NewBootstrapUserDataGetter(kubeClient.CoreV1(), kubeClient.CoreV1())
@@ -94,7 +99,7 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 		secure := isHTTPS(oauthConfig.MasterPublicURL)
 		auth, err := buildSessionAuth(secure, oauthConfig.SessionConfig, bootstrapUserDataGetter)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		sessionAuth = auth
 
@@ -103,7 +108,7 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 		// this must be the first IDP to make sure that it can handle basic auth challenges first
 		// this mostly avoids weird cases with the allow all IDP
 		if bootstrapUserEnabled, err := bootstrapUserDataGetter.IsEnabled(); err != nil {
-			return nil, err
+			return nil, nil, err
 		} else if bootstrapUserEnabled {
 			oauthConfig.IdentityProviders = append(
 				[]osinv1.IdentityProvider{
@@ -138,6 +143,13 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 		}
 	}
 
+	userInformer := userinformer.NewSharedInformerFactory(userClient, time.Second*30) // FIXME: add informer start to poststarthooks
+	if userInformer.User().V1().Groups().Informer().AddIndexers(cache.Indexers{
+		usercache.ByUserIndexName: usercache.ByUserIndexKeys,
+	}); err != nil {
+		return nil, nil, err
+	}
+
 	ret := &OAuthServerConfig{
 		GenericConfig: genericConfig,
 		ExtraOAuthConfig: ExtraOAuthConfig{
@@ -145,9 +157,11 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 			KubeClient:                     kubeClient,
 			EventsClient:                   eventsClient.Events(""),
 			RouteClient:                    routeClient,
-			UserClient:                     userClient.Users(),
-			IdentityClient:                 userClient.Identities(),
-			UserIdentityMappingClient:      userClient.UserIdentityMappings(),
+			UserClient:                     userClient.UserV1().Users(),
+			GroupClient:                    userClient.UserV1().Groups(),
+			GroupInformer:                  userInformer.User().V1().Groups(),
+			IdentityClient:                 userClient.UserV1().Identities(),
+			UserIdentityMappingClient:      userClient.UserV1().UserIdentityMappings(),
 			OAuthAccessTokenClient:         oauthClient.OAuthAccessTokens(),
 			OAuthAuthorizeTokenClient:      oauthClient.OAuthAuthorizeTokens(),
 			OAuthClientClient:              oauthClient.OAuthClients(),
@@ -159,7 +173,14 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 	}
 	genericConfig.BuildHandlerChainFunc = ret.buildHandlerChainForOAuth
 
-	return ret, nil
+	postStartHooks := map[string]genericapiserver.PostStartHookFunc{
+		"openshift.io-StartUserInformer": func(ctx genericapiserver.PostStartHookContext) error {
+			go userInformer.Start(ctx.StopCh)
+			return nil
+		},
+	}
+
+	return ret, postStartHooks, nil
 }
 
 func buildSessionAuth(secure bool, config *osinv1.SessionConfig, getter bootstrap.BootstrapUserDataGetter) (session.SessionAuthenticator, error) {
@@ -240,9 +261,12 @@ type ExtraOAuthConfig struct {
 	// RouteClient provides a client for OpenShift routes API.
 	RouteClient routeclient.RouteV1Interface
 
-	UserClient                userclient.UserInterface
-	IdentityClient            userclient.IdentityInterface
-	UserIdentityMappingClient userclient.UserIdentityMappingInterface
+	UserClient                userclientv1.UserInterface
+	GroupClient               userclientv1.GroupInterface // TODO: currently noone assigns this
+	IdentityClient            userclientv1.IdentityInterface
+	UserIdentityMappingClient userclientv1.UserIdentityMappingInterface
+
+	GroupInformer userinformerv1.GroupInformer // TODO: currently noone assigns this
 
 	OAuthAccessTokenClient         oauthclient.OAuthAccessTokenInterface
 	OAuthAuthorizeTokenClient      oauthclient.OAuthAuthorizeTokenInterface

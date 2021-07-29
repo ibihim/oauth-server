@@ -29,6 +29,8 @@ import (
 	oauthapi "github.com/openshift/api/oauth/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
 	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
+	userclient "github.com/openshift/client-go/user/clientset/versioned/typed/user/v1"
+	userinformer "github.com/openshift/client-go/user/informers/externalversions/user/v1"
 	bootstrap "github.com/openshift/library-go/pkg/authentication/bootstrapauthenticator"
 	"github.com/openshift/library-go/pkg/oauth/oauthdiscovery"
 	"github.com/openshift/library-go/pkg/oauth/oauthserviceaccountclient"
@@ -49,6 +51,7 @@ import (
 	"github.com/openshift/oauth-server/pkg/authenticator/request/basicauthrequest"
 	"github.com/openshift/oauth-server/pkg/authenticator/request/headerrequest"
 	"github.com/openshift/oauth-server/pkg/config"
+	"github.com/openshift/oauth-server/pkg/groupmapper"
 	"github.com/openshift/oauth-server/pkg/oauth/external"
 	"github.com/openshift/oauth-server/pkg/oauth/external/github"
 	"github.com/openshift/oauth-server/pkg/oauth/external/gitlab"
@@ -302,7 +305,14 @@ func (c *OAuthServerConfig) getAuthenticationHandler(mux oauthserver.Mux, errorH
 	}
 
 	for _, identityProvider := range c.ExtraOAuthConfig.Options.IdentityProviders {
-		identityMapper, err := identitymapper.NewIdentityUserMapper(c.ExtraOAuthConfig.IdentityClient, c.ExtraOAuthConfig.UserClient, c.ExtraOAuthConfig.UserIdentityMappingClient, identitymapper.MappingMethodType(identityProvider.MappingMethod))
+		identityMapper, err := newIdentityUserMapperWithGroups(
+			c.ExtraOAuthConfig.IdentityClient,
+			c.ExtraOAuthConfig.UserClient,
+			c.ExtraOAuthConfig.GroupClient,
+			c.ExtraOAuthConfig.GroupInformer,
+			c.ExtraOAuthConfig.UserIdentityMappingClient,
+			identitymapper.MappingMethodType(identityProvider.MappingMethod),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -498,6 +508,7 @@ func (c *OAuthServerConfig) getOAuthProvider(identityProvider osinv1.IdentityPro
 			PreferredUsernameClaims: provider.Claims.PreferredUsername,
 			EmailClaims:             provider.Claims.Email,
 			NameClaims:              provider.Claims.Name,
+			GroupClaims:             provider.Claims.Groups,
 		}
 
 		return openid.NewProvider(identityProvider.Name, transport, config)
@@ -509,7 +520,14 @@ func (c *OAuthServerConfig) getOAuthProvider(identityProvider osinv1.IdentityPro
 }
 
 func (c *OAuthServerConfig) getPasswordAuthenticator(identityProvider osinv1.IdentityProvider) (openshiftauthenticator.PasswordAuthenticator, error) {
-	identityMapper, err := identitymapper.NewIdentityUserMapper(c.ExtraOAuthConfig.IdentityClient, c.ExtraOAuthConfig.UserClient, c.ExtraOAuthConfig.UserIdentityMappingClient, identitymapper.MappingMethodType(identityProvider.MappingMethod))
+	identityMapper, err := newIdentityUserMapperWithGroups(
+		c.ExtraOAuthConfig.IdentityClient,
+		c.ExtraOAuthConfig.UserClient,
+		c.ExtraOAuthConfig.GroupClient,
+		c.ExtraOAuthConfig.GroupInformer,
+		c.ExtraOAuthConfig.UserIdentityMappingClient,
+		identitymapper.MappingMethodType(identityProvider.MappingMethod),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +616,14 @@ func (c *OAuthServerConfig) getAuthenticationRequestHandler() (authenticator.Req
 	}
 
 	for _, identityProvider := range c.ExtraOAuthConfig.Options.IdentityProviders {
-		identityMapper, err := identitymapper.NewIdentityUserMapper(c.ExtraOAuthConfig.IdentityClient, c.ExtraOAuthConfig.UserClient, c.ExtraOAuthConfig.UserIdentityMappingClient, identitymapper.MappingMethodType(identityProvider.MappingMethod))
+		identityMapper, err := newIdentityUserMapperWithGroups(
+			c.ExtraOAuthConfig.IdentityClient,
+			c.ExtraOAuthConfig.UserClient,
+			c.ExtraOAuthConfig.GroupClient,
+			c.ExtraOAuthConfig.GroupInformer,
+			c.ExtraOAuthConfig.UserIdentityMappingClient,
+			identitymapper.MappingMethodType(identityProvider.MappingMethod),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -665,6 +690,31 @@ func (c *OAuthServerConfig) getAuthenticationRequestHandler() (authenticator.Req
 
 	authRequestHandler := union.New(authRequestHandlers...)
 	return authRequestHandler, nil
+}
+
+func newIdentityUserMapperWithGroups(
+	identities userclient.IdentityInterface,
+	users userclient.UserInterface,
+	groups userclient.GroupInterface,
+	groupsInformer userinformer.GroupInformer,
+	userIdentityMapping userclient.UserIdentityMappingInterface,
+	method identitymapper.MappingMethodType,
+) (api.UserIdentityMapper, error) {
+	userMapper, err := identitymapper.NewIdentityUserMapper(
+		identities,
+		users,
+		userIdentityMapping,
+		method,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return groupmapper.NewUserGroupsMapper(
+		userMapper,
+		groups,
+		groupsInformer,
+	), nil
 }
 
 // callbackPasswordAuthenticator combines password auth, successful login callback,

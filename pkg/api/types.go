@@ -31,8 +31,12 @@ type UserIdentityInfo interface {
 	GetProviderName() string
 	// GetProviderUserName uniquely identifies this particular identity for this provider.  It is NOT guaranteed to be unique across providers
 	GetProviderUserName() string
+	// GetProviderGroups returns the names of the groups for this identity
+	GetProviderGroups() []string
 	// GetExtra is a map to allow providers to add additional fields that they understand
 	GetExtra() map[string]string
+	// GetProviderPreferredUserName is a shortcut to retrieve the preferred username from the Extra map
+	GetProviderPreferredUserName() string
 }
 
 // UserIdentityMapper maps UserIdentities into user.Info objects to allow different user abstractions within auth code.
@@ -40,6 +44,10 @@ type UserIdentityMapper interface {
 	// UserFor takes an identity, ignores the passed identity.Provider, forces the provider value to some other value and then creates the mapping.
 	// It returns the corresponding user.Info
 	UserFor(identityInfo UserIdentityInfo) (user.Info, error)
+}
+
+type GroupIdentityMapper interface {
+	GroupsFor(identityInfo UserIdentityInfo) (user.Info, error)
 }
 
 type Client interface {
@@ -59,6 +67,7 @@ type Grant struct {
 type DefaultUserIdentityInfo struct {
 	ProviderName     string
 	ProviderUserName string
+	ProviderGroups   []string
 	Extra            map[string]string
 }
 
@@ -82,6 +91,17 @@ func (i *DefaultUserIdentityInfo) GetProviderName() string {
 
 func (i *DefaultUserIdentityInfo) GetProviderUserName() string {
 	return i.ProviderUserName
+}
+
+func (i *DefaultUserIdentityInfo) GetProviderPreferredUserName() string {
+	if preferredUsername := i.Extra[IdentityPreferredUsernameKey]; len(preferredUsername) > 0 {
+		return preferredUsername
+	}
+	return i.ProviderUserName
+}
+
+func (i *DefaultUserIdentityInfo) GetProviderGroups() []string {
+	return i.ProviderGroups
 }
 
 func (i *DefaultUserIdentityInfo) GetExtra() map[string]string {
