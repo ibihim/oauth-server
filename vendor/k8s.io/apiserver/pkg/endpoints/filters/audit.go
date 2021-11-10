@@ -33,6 +33,7 @@ import (
 	"k8s.io/apiserver/pkg/audit/policy"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/klog/v2"
 )
 
 // WithAudit decorates a http.Handler with audit logging information for all the
@@ -41,6 +42,7 @@ import (
 // process events. If sink or audit policy is nil, no decoration takes place.
 func WithAudit(handler http.Handler, sink audit.Sink, policy policy.Checker, longRunningCheck request.LongRunningRequestCheck) http.Handler {
 	if sink == nil || policy == nil {
+		klog.Infof("sink == nil || policy == nil, sink == %v, policy == %v", sink, policy)
 		return handler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -50,6 +52,9 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy policy.Checker, lon
 			responsewriters.InternalError(w, req, errors.New("failed to create audit event"))
 			return
 		}
+
+		klog.Infof("policy == %v, ev == %v, ctx == %v", policy, ev, req.Context())
+
 		ctx := req.Context()
 		if ev == nil || ctx == nil {
 			handler.ServeHTTP(w, req)
