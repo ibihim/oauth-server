@@ -85,8 +85,12 @@ func (o *OsinServer) RunOsinServer(stopCh <-chan struct{}) error {
 
 	config, ok := obj.(*osinv1.OsinServerConfig)
 	if !ok {
-		return fmt.Errorf("expected OsinServerConfig, got %T", config)
+		return fmt.Errorf("expected OsinServerConfig, got %+v", config)
 	}
+
+	klog.Infof("RunOsinServer:config = %+v", config)
+	klog.Infof("RunOsinServer:config.oauthConfig = %+v", config.OAuthConfig)
+	klog.Infof("RunOsinServer:config.auditConfig = %+v", config.AuditConfig)
 
 	return RunOsinServer(config, stopCh)
 }

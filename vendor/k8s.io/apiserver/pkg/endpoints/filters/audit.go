@@ -132,6 +132,9 @@ func createAuditEventAndAttachToContext(req *http.Request, policy policy.Checker
 
 	level, omitStages := policy.LevelAndStages(attribs)
 	audit.ObservePolicyLevel(ctx, level)
+
+	klog.Infof("createAuditEventAndAttachToContext: level: %v, attribs: %v", level, attribs)
+
 	if level == auditinternal.LevelNone {
 		// Don't audit.
 		return req, nil, nil, nil

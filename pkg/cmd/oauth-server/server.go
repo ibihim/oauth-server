@@ -7,6 +7,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +18,7 @@ import (
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/authorization/path"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/server/options"
 	genericapiserveroptions "k8s.io/apiserver/pkg/server/options"
 
 	osinv1 "github.com/openshift/api/osin/v1"
@@ -53,9 +55,20 @@ func RunOsinServer(osinConfig *osinv1.OsinServerConfig, stopCh <-chan struct{}) 
 }
 
 func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAuthServerConfig, map[string]genericapiserver.PostStartHookFunc, error) {
+	klog.Infof("newOAuthServerConfig:osinConfig.auditConfig = %+v", osinConfig.AuditConfig)
+
 	scheme := runtime.NewScheme()
 	metav1.AddToGroupVersion(scheme, corev1.SchemeGroupVersion)
 	genericConfig := genericapiserver.NewRecommendedConfig(serializer.NewCodecFactory(scheme))
+
+	// AuditConfig.PolicyFile: PolicyFile is a path to the file that defines the audit policy configuration.
+	// AuditConfig.AuditFilePath: All requests coming to the apiserver will be logged to this file.
+
+	auditOpts := options.NewAuditOptions()
+	auditOpts.PolicyFile = osinConfig.AuditConfig.PolicyFile
+	auditOpts.ApplyTo(genericConfig.Config)
+
+	klog.Infof("newOAuthServerConfig:genericConfig = %+v", genericConfig)
 
 	servingOptions, err := serving.ToServingOptions(osinConfig.ServingInfo)
 	if err != nil {
@@ -130,8 +143,11 @@ func newOAuthServerConfig(osinConfig *osinv1.OsinServerConfig) (*oauthserver.OAu
 
 	// TODO you probably want to set this
 	oauthServerConfig.GenericConfig.CorsAllowedOriginList = osinConfig.CORSAllowedOrigins
-	//oauthServerConfig.GenericConfig.AuditBackend = genericConfig.AuditBackend
-	//oauthServerConfig.GenericConfig.AuditPolicyChecker = genericConfig.AuditPolicyChecker
+	oauthServerConfig.GenericConfig.AuditBackend = genericConfig.AuditBackend
+	oauthServerConfig.GenericConfig.AuditPolicyChecker = genericConfig.AuditPolicyChecker
+
+	klog.Infof("newOAuthServerConfig:oauthServerConfig: %+v", oauthServerConfig)
+	klog.Infof("newOAuthServerConfig:oauthServerConfig.GenericConfig: %+v", oauthServerConfig.GenericConfig)
 
 	return oauthServerConfig, postStartHooks, nil
 }

@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 
 	osinv1 "github.com/openshift/api/osin/v1"
 	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
@@ -327,6 +328,8 @@ func (c completedOAuthConfig) New(delegationTarget genericapiserver.DelegationTa
 }
 
 func (c *OAuthServerConfig) buildHandlerChainForOAuth(startingHandler http.Handler, genericConfig *genericapiserver.Config) http.Handler {
+	klog.Infof("buildHandlerChainForOAuth: genericConfig: %+v", genericConfig)
+
 	// add OAuth handlers on top of the generic API server handlers
 	handler, err := c.WithOAuth(startingHandler)
 	if err != nil {

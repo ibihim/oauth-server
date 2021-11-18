@@ -273,8 +273,7 @@ type KubeClientConfig struct {
 
 type ClientConnectionOverrides struct {
 	// acceptContentTypes defines the Accept header sent by clients when connecting to a server, overriding the
-	// default value of 'application/json'. This field will control all connections to the server used by a particular
-	// client.
+	// default value of 'application/json'. This field will control all connections to the server used / client.
 	AcceptContentTypes string `json:"acceptContentTypes"`
 	// contentType is the content type used when sending data to the server from this client.
 	ContentType string `json:"contentType"`
