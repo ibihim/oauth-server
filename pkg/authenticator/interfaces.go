@@ -16,7 +16,8 @@ type Client interface {
 	AuthenticateClient(client api.Client) (*authenticator.Response, bool, error)
 }
 
-// PasswordAuthenticator in an authenticator that uses username/password to verify identities
+// PasswordAuthenticator in an authenticator that uses username/password to verify identities.
+// It is equivalent to the AuthenticateRequest in k8s.io/apiserver/pkg/authentication/authenticator
 type PasswordAuthenticator interface {
 	AuthenticatePassword(ctx context.Context, user, password string) (*authenticator.Response, bool, error)
 }

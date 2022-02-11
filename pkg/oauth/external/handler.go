@@ -33,7 +33,19 @@ type Handler struct {
 	mapper       authapi.UserIdentityMapper
 }
 
-func NewExternalOAuthRedirector(provider Provider, state State, redirectURL string, success handlers.AuthenticationSuccessHandler, errorHandler handlers.AuthenticationErrorHandler, mapper authapi.UserIdentityMapper) (handlers.AuthenticationRedirector, http.Handler, error) {
+var (
+	_ handlers.AuthenticationRedirector            = (*Handler)(nil)
+	_ openshiftauthenticator.PasswordAuthenticator = (*Handler)(nil)
+)
+
+// TODO@ibihim 10.02.2022: refactor together with NewOAuthPasswordAuthenticator
+func NewExternalOAuthRedirector(
+	provider Provider,
+	state State, redirectURL string,
+	success handlers.AuthenticationSuccessHandler,
+	errorHandler handlers.AuthenticationErrorHandler,
+	mapper authapi.UserIdentityMapper,
+) (handlers.AuthenticationRedirector, http.Handler, error) {
 	clientConfig, err := provider.NewConfig()
 	if err != nil {
 		return nil, nil, err
@@ -65,7 +77,9 @@ func NewExternalOAuthRedirector(provider Provider, state State, redirectURL stri
 	return handler, handler, nil
 }
 
-// AuthenticationRedirect implements oauth.handlers.RedirectAuthHandler
+// AuthenticationRedirect redirects the request to the OAuth2 server with a URL
+// that is conformative with OAuth2 and the client specified. It initiates the
+// OAuth2 Code Grant flow.
 func (h *Handler) AuthenticationRedirect(w http.ResponseWriter, req *http.Request) error {
 	klog.V(4).Infof("Authentication needed for %v", h.provider)
 
@@ -85,6 +99,7 @@ func (h *Handler) AuthenticationRedirect(w http.ResponseWriter, req *http.Reques
 	return nil
 }
 
+// TODO@ibihim 10.02.2022: refactor together with NewExternalOAuthRedirector
 func NewOAuthPasswordAuthenticator(provider Provider, mapper authapi.UserIdentityMapper) (openshiftauthenticator.PasswordAuthenticator, error) {
 	clientConfig, err := provider.NewConfig()
 	if err != nil {
@@ -113,7 +128,14 @@ func NewOAuthPasswordAuthenticator(provider Provider, mapper authapi.UserIdentit
 	}, nil
 }
 
+// AuthenticatePassword initiates the OAuth2 Resource Owner Password Credentials
+// flow. The user reveals her/his ressource credentials to the client. The
+// client uses the credentials one time to get the access and refresh token and
+// then to get the user's identity.
+// It is prefered to NOT use this flow according to
+// https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics-19#section-2.4.
 func (h *Handler) AuthenticatePassword(ctx context.Context, username, password string) (*authenticator.Response, bool, error) {
+	// TODO@ibihim: add audit logging here, if this is not handled already -> verify it is audit logged
 	// Exchange password for a token
 	accessReq := h.client.NewAccessRequest(osincli.PASSWORD, &osincli.AuthorizeData{Username: username, Password: password})
 	accessData, err := accessReq.GetToken()
@@ -142,9 +164,11 @@ func (h *Handler) AuthenticatePassword(ctx context.Context, username, password s
 	return identitymapper.ResponseFor(h.mapper, identity)
 }
 
-// ServeHTTP handles the callback request in response to an external oauth flow
+// ServeHTTP handles the OAuth2 Access Token Request in the OAuth2 Code Grant
+// flow. It uses the code to receive access and refresh token and then to get
+// the identity.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-
+	// TODO@ibihim: here we are in the 2nd interaction with our user, add audit logs
 	// Extract auth code
 	authReq := h.client.NewAuthorizeRequest(osincli.CODE)
 	authData, err := authReq.HandleRequest(req)

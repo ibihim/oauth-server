@@ -40,6 +40,10 @@ type TokenTimeoutSeconds interface {
 	GetAccessTokenInactivityTimeoutSeconds() *int32
 }
 
+var (
+	_ (osinserver.AuthorizeHandler) = (*authorizeAuthenticator)(nil)
+)
+
 // HandleAuthorize implements osinserver.AuthorizeHandler to ensure the AuthorizeRequest is authenticated.
 // If the request is authenticated, UserData and Authorized are set and false is returned.
 // If the request is not authenticated, the auth handler is called and the request is not authorized
@@ -49,7 +53,7 @@ func (h *authorizeAuthenticator) HandleAuthorize(ar *osin.AuthorizeRequest, resp
 		klog.V(4).Infof("OAuth authentication error: %v", err)
 		return h.errorHandler.AuthenticationError(err, w, ar.HttpRequest)
 	}
-	if !ok {
+	if !ok { // TODO@ibihim: come back once understood
 		return h.handler.AuthenticationNeeded(ar.Client, w, ar.HttpRequest)
 	}
 	klog.V(4).Infof("OAuth authentication succeeded: %#v", info.User)
@@ -68,6 +72,10 @@ func (h *authorizeAuthenticator) HandleAuthorize(ar *osin.AuthorizeRequest, resp
 	return false, nil
 }
 
+var (
+	_ (osinserver.AccessHandler) = (*accessAuthenticator)(nil)
+)
+
 // accessAuthenticator implements osinserver.AccessHandler to ensure non-token requests are authenticated
 type accessAuthenticator struct {
 	password  openshiftauthenticator.PasswordAuthenticator
@@ -75,7 +83,11 @@ type accessAuthenticator struct {
 	client    openshiftauthenticator.Client
 }
 
-// HandleAccess implements osinserver.AccessHandler
+// HandleAccess handles OAuth2 Access Token Requests. In order to receive a
+// token a request must contain some form of valid osin.AccessRequest. E.g.
+// username and password for the OAuth2 Resource Owner Password Credentials
+// or Authorization Code Grant flow flag.
+// The validation for the former happens at osin.server.HandleAccessRequest
 func (h *accessAuthenticator) HandleAccess(ar *osin.AccessRequest, w http.ResponseWriter) error {
 	var (
 		info *authenticator.Response

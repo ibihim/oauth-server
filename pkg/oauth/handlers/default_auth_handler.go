@@ -22,14 +22,23 @@ type unionAuthenticationHandler struct {
 	selectionHandler AuthenticationSelectionHandler
 }
 
+var (
+	_ (AuthenticationHandler) = (*unionAuthenticationHandler)(nil)
+)
+
 // NewUnionAuthenticationHandler returns an oauth.AuthenticationHandler that muxes multiple challenge handlers and redirect handlers
-func NewUnionAuthenticationHandler(passedChallengers map[string]AuthenticationChallenger, passedRedirectors *AuthenticationRedirectors, errorHandler AuthenticationErrorHandler, selectionHandler AuthenticationSelectionHandler) AuthenticationHandler {
+func NewUnionAuthenticationHandler(
+	passedChallengers map[string]AuthenticationChallenger,
+	passedRedirectors *AuthenticationRedirectors,
+	errorHandler AuthenticationErrorHandler,
+	selectionHandler AuthenticationSelectionHandler,
+) AuthenticationHandler {
 	challengers := passedChallengers
 	if challengers == nil {
 		challengers = make(map[string]AuthenticationChallenger, 1)
 	}
 
-	redirectors := passedRedirectors
+	redirectors := passedRedirectors // TODO@ibihim: why do we do that?
 	if redirectors == nil {
 		redirectors = new(AuthenticationRedirectors)
 	}
@@ -84,6 +93,8 @@ func (authHandler *unionAuthenticationHandler) AuthenticationNeeded(apiClient au
 		return false, fmt.Errorf("apiClient data was not an oauthapi.OAuthClient")
 	}
 
+	// If client has specified RespondWithChallenges, then there is an attempt to add challenge-headers.
+	// If RespondWithChallengse is set, no other option will be checked.
 	if client.RespondWithChallenges {
 		errors := []error{}
 		headers := http.Header(make(map[string][]string))
@@ -137,8 +148,8 @@ func (authHandler *unionAuthenticationHandler) AuthenticationNeeded(apiClient au
 			return true, nil
 
 		}
-		return false, kerrors.NewAggregate(errors)
 
+		return false, kerrors.NewAggregate(errors)
 	}
 
 	// See if a single provider was selected
@@ -168,7 +179,7 @@ func (authHandler *unionAuthenticationHandler) AuthenticationNeeded(apiClient au
 				URL:  u.String(),
 			}
 			providers = append(providers, providerInfo)
-		}
+		} // TODO@ibihim: isn't the logic within this block, until here, static?
 		selectedProvider, handled, err := authHandler.selectionHandler.SelectAuthentication(providers, w, req)
 		if err != nil {
 			return authHandler.errorHandler.AuthenticationError(err, w, req)

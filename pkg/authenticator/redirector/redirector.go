@@ -49,7 +49,7 @@ func (r *redirector) AuthenticationRedirect(w http.ResponseWriter, req *http.Req
 	if err != nil {
 		return nil
 	}
-	http.Redirect(w, req, redirectURL.String(), http.StatusFound)
+	http.Redirect(w, req, redirectURL.String(), http.StatusFound) // TODO@ibihim: what is the difference between setting the location and using http.Redirect?
 	return nil
 }
 
