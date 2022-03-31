@@ -12,6 +12,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/server/options"
 	"k8s.io/klog/v2"
@@ -19,8 +20,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
 	"github.com/openshift/library-go/pkg/serviceability"
-
-	"github.com/openshift/oauth-server/pkg/audit"
 )
 
 type OsinServerOptions struct {
@@ -70,15 +69,17 @@ func NewOsinServerCommand(out, errout io.Writer, stopCh <-chan struct{}) *cobra.
 }
 
 func (o *OsinServerOptions) Validate() error {
+	var errs []error
+
 	if len(o.ConfigFile) == 0 {
-		return errors.New("--config is required for this command")
+		errs = append(errs, errors.New("--config is required for this command"))
 	}
 
-	if o.Audit != nil && o.Audit.PolicyFile != "" {
-		return audit.Validate(o.Audit.PolicyFile)
+	if err := o.Audit.Validate(); err != nil {
+		errs = append(errs, err...)
 	}
 
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 func (o *OsinServerOptions) RunOsinServer(stopCh <-chan struct{}) error {
