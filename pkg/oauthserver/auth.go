@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/openshift/osin"
 	"github.com/openshift/osincli"
@@ -353,8 +356,32 @@ func (c *OAuthServerConfig) getAuthenticationHandler(mux oauthserver.Mux, errorH
 					// If there is more than one Identity Provider acting as a login
 					// provider, we need to give each of them their own login path,
 					// to avoid ambiguity.
+
+					isGo122OrLater := func() bool {
+						version := runtime.Version()
+						parts := strings.Split(version, ".")
+						if len(parts) < 2 {
+							return false
+						}
+						minor, _ := strconv.Atoi(parts[1])
+						return minor >= 22
+					}()
+
 					sanitizedPath := path.Join(openShiftLoginPrefix, url.PathEscape(identityProvider.Name))
-					loginPath = sanitizedPath
+					loginPath = path.Join(openShiftLoginPrefix, identityProvider.Name)
+
+					if isGo122OrLater {
+						loginPath = sanitizedPath
+					}
+
+					fmt.Printf(`
+================================================================================================
+loginPath = %s
+version = %s
+================================================================================================
+					
+					`, loginPath, runtime.Version())
+
 					redirectLoginPath = sanitizedPath
 				}
 
