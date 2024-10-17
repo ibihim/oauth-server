@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -99,9 +100,25 @@ func (l *Login) Install(mux oauthserver.Mux, prefix string) {
 	goMuxChangeVersion := 22
 	major, err := strconv.Atoi(strings.Split(runtime.Version(), ".")[minorChunk])
 
+	fmt.Printf(`
+================================================================================================
+Go version: %d
+Mux version 1.21: %s
+================================================================================================
+			`, major, func() string { s, _ := os.LookupEnv("GODEBUG"); return s }())
+
 	if err != nil || major >= goMuxChangeVersion {
-		mux.Handle(fmt.Sprintf("%s %s", http.MethodGet, prefix), l)
-		mux.Handle(fmt.Sprintf("%s %s", http.MethodPost, prefix), l)
+		getPath := fmt.Sprintf("%s %s", http.MethodGet, prefix)
+		postPath := fmt.Sprintf("%s %s", http.MethodPost, prefix)
+		fmt.Printf(`
+================================================================================================
+Setting up:
+- %s
+- %s
+================================================================================================
+		`, getPath, postPath)
+		mux.Handle(getPath, l)
+		mux.Handle(postPath, l)
 		return
 	}
 
@@ -109,6 +126,11 @@ func (l *Login) Install(mux oauthserver.Mux, prefix string) {
 }
 
 func (l *Login) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	fmt.Printf(`
+================================================================================================
+Login ServeHTTP with %s
+================================================================================================
+				`, req.Method)
 	switch req.Method {
 	case http.MethodGet:
 		l.handleLoginForm(w, req)
@@ -138,8 +160,20 @@ func (l *Login) handleLoginForm(w http.ResponseWriter, req *http.Request) {
 		},
 	}
 	if then := req.URL.Query().Get(thenParam); redirect.IsServerRelativeURL(then) {
+		fmt.Printf(`
+================================================================================================
+then is considered ok: %s
+================================================================================================
+		`, then)
 		form.Values.Then = then
 	} else {
+		fmt.Printf(`
+================================================================================================
+then is NOT considered ok, redirect to ROOT:
+- then: %s
+- isServerRelativeURL: %t
+================================================================================================
+		`, req.URL.Query().Get(thenParam), redirect.IsServerRelativeURL(then))
 		http.Redirect(w, req, "/", http.StatusFound)
 		return
 	}

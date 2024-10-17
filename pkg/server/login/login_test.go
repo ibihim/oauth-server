@@ -3,6 +3,7 @@ package login
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,57 @@ func (t *testAuth) AuthenticationSucceeded(user user.Info, then string, w http.R
 	t.User = user
 	t.Then = then
 	return false, nil
+}
+
+func TestMux(t *testing.T) {
+	idpNames := []string{"my idp 1"}
+
+	loginFormRenderer, err := NewLoginFormRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, idpName := range idpNames {
+		loginHandler := NewLogin(
+			idpName,
+			&csrf.FakeCSRF{Token: "test"},
+			&testAuth{Success: true, User: &user.DefaultInfo{Name: "user"}},
+			loginFormRenderer,
+		)
+
+		mux := http.NewServeMux()
+		loginPath := fmt.Sprintf("/login/%s", idpName)
+		loginPathEscaped := fmt.Sprintf("/login/%s", url.PathEscape(idpName))
+		loginHandler.Install(mux, loginPath)
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		req, err := http.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf(
+				"%s%s?%s",
+				server.URL,
+				loginPathEscaped,
+				url.PathEscape("then=/done"),
+			),
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+	}
+
 }
 
 func TestLogin(t *testing.T) {
