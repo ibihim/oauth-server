@@ -83,10 +83,49 @@ const (
 	openShiftBrowserClientID     = "openshift-browser-client"
 )
 
+type muxDebugger struct {
+	mux *http.ServeMux
+}
+
+var _ oauthserver.Mux = &muxDebugger{}
+
+func (m *muxDebugger) Handle(pattern string, handler http.Handler) {
+	fmt.Printf(`
+================================================================================================
+Mux:
+- pattern: %s
+- handler: %v
+================================================================================================
+	`)
+
+	m.mux.Handle(pattern, handler)
+}
+
+func (m *muxDebugger) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	fmt.Printf(`
+================================================================================================
+Mux:
+- pattern: %s
+- handlerfunc: %v
+================================================================================================`)
+
+	m.mux.HandleFunc(pattern, handler)
+}
+
+func (m *muxDebugger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf(`
+================================================================================================
+Mux ServeHTTP with %s
+================================================================================================
+	`, r.URL.Path)
+
+	m.mux.ServeHTTP(w, r)
+}
+
 // WithOAuth decorates the given handler by serving the OAuth2 endpoints while
 // passing through all other requests to the given handler.
 func (c *OAuthServerConfig) WithOAuth(handler http.Handler) (http.Handler, error) {
-	mux := http.NewServeMux()
+	mux := &muxDebugger{mux: http.NewServeMux()}
 
 	// pass through all other requests
 	mux.Handle("/", handler)
