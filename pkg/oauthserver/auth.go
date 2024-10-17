@@ -94,9 +94,9 @@ func (m *muxDebugger) Handle(pattern string, handler http.Handler) {
 ================================================================================================
 Mux:
 - pattern: %s
-- handler: %v
+- handler
 ================================================================================================
-	`)
+	`, pattern)
 
 	m.mux.Handle(pattern, handler)
 }
@@ -106,8 +106,9 @@ func (m *muxDebugger) HandleFunc(pattern string, handler func(http.ResponseWrite
 ================================================================================================
 Mux:
 - pattern: %s
-- handlerfunc: %v
-================================================================================================`)
+- handlerfunc
+================================================================================================
+	`, pattern)
 
 	m.mux.HandleFunc(pattern, handler)
 }
@@ -119,7 +120,37 @@ Mux ServeHTTP with %s
 ================================================================================================
 	`, r.URL.Path)
 
-	m.mux.ServeHTTP(w, r)
+	m.mux.ServeHTTP(&writerDebug{w: w}, r)
+}
+
+type writerDebug struct {
+	w http.ResponseWriter
+}
+
+var _ http.ResponseWriter = &writerDebug{}
+
+func (w *writerDebug) Header() http.Header {
+	return w.w.Header()
+}
+
+func (w *writerDebug) Write(b []byte) (int, error) {
+	fmt.Printf(`
+================================================================================================
+Writer Write with %s
+================================================================================================
+	`, string(b))
+
+	return w.w.Write(b)
+}
+
+func (w *writerDebug) WriteHeader(statusCode int) {
+	fmt.Printf(`
+================================================================================================
+Writer WriteHeader with %d
+================================================================================================
+	`, statusCode)
+
+	w.w.WriteHeader(statusCode)
 }
 
 // WithOAuth decorates the given handler by serving the OAuth2 endpoints while
