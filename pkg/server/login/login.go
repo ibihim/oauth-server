@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"runtime"
+	"strconv"
+	"strings"
 
 	"k8s.io/klog/v2"
 
@@ -92,6 +95,16 @@ func NewLogin(provider string, csrf csrf.CSRF, auth PasswordAuthenticator, rende
 }
 
 func (l *Login) Install(mux oauthserver.Mux, prefix string) {
+	minorChunk := 1
+	goMuxChangeVersion := 22
+	major, err := strconv.Atoi(strings.Split(runtime.Version(), ".")[minorChunk])
+
+	if err != nil || major >= goMuxChangeVersion {
+		mux.Handle(fmt.Sprintf("%s %s", http.MethodGet, prefix), l)
+		mux.Handle(fmt.Sprintf("%s %s", http.MethodPost, prefix), l)
+		return
+	}
+
 	mux.Handle(prefix, l)
 }
 

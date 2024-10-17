@@ -11,8 +11,6 @@ import (
 	"net/url"
 	"path"
 	"runtime"
-	"strconv"
-	"strings"
 
 	"github.com/openshift/osin"
 	"github.com/openshift/osincli"
@@ -357,22 +355,7 @@ func (c *OAuthServerConfig) getAuthenticationHandler(mux oauthserver.Mux, errorH
 					// provider, we need to give each of them their own login path,
 					// to avoid ambiguity.
 
-					isGo122OrLater := func() bool {
-						version := runtime.Version()
-						parts := strings.Split(version, ".")
-						if len(parts) < 2 {
-							return false
-						}
-						minor, _ := strconv.Atoi(parts[1])
-						return minor >= 22
-					}()
-
-					sanitizedPath := path.Join(openShiftLoginPrefix, url.PathEscape(identityProvider.Name))
 					loginPath = path.Join(openShiftLoginPrefix, identityProvider.Name)
-
-					if isGo122OrLater {
-						loginPath = sanitizedPath
-					}
 
 					fmt.Printf(`
 ================================================================================================
@@ -382,7 +365,7 @@ version = %s
 					
 					`, loginPath, runtime.Version())
 
-					redirectLoginPath = sanitizedPath
+					redirectLoginPath = path.Join(openShiftLoginPrefix, url.PathEscape(identityProvider.Name))
 				}
 
 				// Since we're redirecting to a local login page, we don't need to force absolute URL resolution
