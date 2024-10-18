@@ -95,41 +95,87 @@ func NewLogin(provider string, csrf csrf.CSRF, auth PasswordAuthenticator, rende
 	}
 }
 
-func (l *Login) Install(mux oauthserver.Mux, prefix string) {
-	minorChunk := 1
+// isNewServeMux checks the GODEBUG environment variable and the Go runtime
+// version to determine if the new behavior of ServeMux.Handle is enabled.
+func isNewServeMux() bool {
 	goMuxChangeVersion := 22
-	major, err := strconv.Atoi(strings.Split(runtime.Version(), ".")[minorChunk])
+
+	// Check GODEBUG statement.
+	mux121Enabled := false
+	godebug := os.Getenv("GODEBUG")
+	if strings.Contains(godebug, "httpmuxgo121=1") {
+		mux121Enabled = true
+	}
+
+	// Go runtime version.
+	minorChunk := 1
+	goVersion := runtime.Version()
+	minorStr := strings.Split(goVersion, ".")[minorChunk]
+
+	// Result
+	minor, err := strconv.Atoi(minorStr)
+	if err == nil {
+		// For the new behavior to occur, we need a version to support it and
+		// we must not disable it in the GODEBUG environment variable.
+		return minor >= goMuxChangeVersion && !mux121Enabled
+	}
+
+	// Try to match as string.
+	for _, s := range []string{
+		// Possible old versions. Added some super old versions on top.
+		"go1.21", "go1.20",
+		"go1.19", /*OCP 4.12*/
+		"go1.18", /*OCP 4.11*/
+		"go1.17", /*OCP 4.10*/
+		"go1.16", /*OCP 4.9*/
+		"go1.15", /*OCP 4.8*/
+	} {
+		if strings.Contains(goVersion, s) {
+			return true
+		}
+	}
+
+	// Most probable long term behavior.
+	return !mux121Enabled
+}
+
+func (l *Login) Install(mux oauthserver.Mux, prefix string) {
+	fmt.Printf(`
+= Logi Install =================================================================
+Go version: %s
+Mux version 1.21: %s
+			`, runtime.Version(), func() string { s, _ := os.LookupEnv("GODEBUG"); return s }())
 
 	fmt.Printf(`
-================================================================================================
-Go version: %d
-Mux version 1.21: %s
-================================================================================================
-			`, major, func() string { s, _ := os.LookupEnv("GODEBUG"); return s }())
-
-	if err != nil || major >= goMuxChangeVersion {
+New ServeMux: %t
+	`, isNewServeMux())
+	if isNewServeMux() {
 		getPath := fmt.Sprintf("%s %s", http.MethodGet, prefix)
 		postPath := fmt.Sprintf("%s %s", http.MethodPost, prefix)
 		fmt.Printf(`
-================================================================================================
-Setting up:
+Setting up paths with methods:
 - %s
 - %s
-================================================================================================
+================================================================================
 		`, getPath, postPath)
 		mux.Handle(getPath, l)
 		mux.Handle(postPath, l)
 		return
 	}
 
+	fmt.Printf(`
+Setting up paths without methods:
+- %s
+================================================================================
+			`, prefix)
 	mux.Handle(prefix, l)
 }
 
 func (l *Login) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Printf(`
-================================================================================================
+================================================================================
 Login ServeHTTP with %s
-================================================================================================
+================================================================================
 				`, req.Method)
 	switch req.Method {
 	case http.MethodGet:
@@ -161,18 +207,18 @@ func (l *Login) handleLoginForm(w http.ResponseWriter, req *http.Request) {
 	}
 	if then := req.URL.Query().Get(thenParam); redirect.IsServerRelativeURL(then) {
 		fmt.Printf(`
-================================================================================================
+= Login handleLoginForm ========================================================
 then is considered ok: %s
-================================================================================================
+================================================================================
 		`, then)
 		form.Values.Then = then
 	} else {
 		fmt.Printf(`
-================================================================================================
+= Login handleLoginForm ========================================================
 then is NOT considered ok, redirect to ROOT:
 - then: %s
 - isServerRelativeURL: %t
-================================================================================================
+================================================================================
 		`, req.URL.Query().Get(thenParam), redirect.IsServerRelativeURL(then))
 		http.Redirect(w, req, "/", http.StatusFound)
 		return

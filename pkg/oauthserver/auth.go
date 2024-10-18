@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"runtime"
 
 	"github.com/openshift/osin"
 	"github.com/openshift/osincli"
@@ -91,11 +90,9 @@ var _ oauthserver.Mux = &muxDebugger{}
 
 func (m *muxDebugger) Handle(pattern string, handler http.Handler) {
 	fmt.Printf(`
-================================================================================================
-Mux:
+= Mux Handle (Register) ========================================================
 - pattern: %s
-- handler
-================================================================================================
+================================================================================
 	`, pattern)
 
 	m.mux.Handle(pattern, handler)
@@ -103,11 +100,9 @@ Mux:
 
 func (m *muxDebugger) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	fmt.Printf(`
-================================================================================================
-Mux:
+= Mux HanldeFunc (Register) ====================================================
 - pattern: %s
-- handlerfunc
-================================================================================================
+================================================================================
 	`, pattern)
 
 	m.mux.HandleFunc(pattern, handler)
@@ -115,10 +110,9 @@ Mux:
 
 func (m *muxDebugger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf(`
-================================================================================================
-Mux ServeHTTP with %s
-================================================================================================
-	`, r.URL.Path)
+== Mux ServeHTTP ===============================================================
+- r.URL: %s
+	`, r.URL.String())
 
 	m.mux.ServeHTTP(&writerDebug{w: w}, r)
 }
@@ -134,20 +128,13 @@ func (w *writerDebug) Header() http.Header {
 }
 
 func (w *writerDebug) Write(b []byte) (int, error) {
-	fmt.Printf(`
-================================================================================================
-Writer Write with %s
-================================================================================================
-	`, string(b))
-
 	return w.w.Write(b)
 }
 
 func (w *writerDebug) WriteHeader(statusCode int) {
 	fmt.Printf(`
-================================================================================================
-Writer WriteHeader with %d
-================================================================================================
+- writer.WriteHeader: %d
+================================================================================
 	`, statusCode)
 
 	w.w.WriteHeader(statusCode)
@@ -426,15 +413,6 @@ func (c *OAuthServerConfig) getAuthenticationHandler(mux oauthserver.Mux, errorH
 					// to avoid ambiguity.
 
 					loginPath = path.Join(openShiftLoginPrefix, identityProvider.Name)
-
-					fmt.Printf(`
-================================================================================================
-loginPath = %s
-version = %s
-================================================================================================
-					
-					`, loginPath, runtime.Version())
-
 					redirectLoginPath = path.Join(openShiftLoginPrefix, url.PathEscape(identityProvider.Name))
 				}
 
