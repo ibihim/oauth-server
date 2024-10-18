@@ -95,6 +95,14 @@ func NewLogin(provider string, csrf csrf.CSRF, auth PasswordAuthenticator, rende
 	}
 }
 
+func init() {
+	fmt.Printf(`
+= DEBUG INIT ===================================================================
+%s
+================================================================================
+	`, "Debugging Iteration 01")
+}
+
 // isNewServeMux checks the GODEBUG environment variable and the Go runtime
 // version to determine if the new behavior of ServeMux.Handle is enabled.
 func isNewServeMux() bool {
