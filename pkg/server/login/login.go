@@ -151,7 +151,7 @@ func (l *Login) Install(mux oauthserver.Mux, prefix string) {
 	fmt.Printf(`
 = Logi Install =================================================================
 Go version: %s
-Mux version 1.21: %s
+GODEBUG: %s
 			`, runtime.Version(), func() string { s, _ := os.LookupEnv("GODEBUG"); return s }())
 
 	fmt.Printf(`

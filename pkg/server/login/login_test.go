@@ -58,9 +58,9 @@ func TestMux(t *testing.T) {
 		)
 
 		mux := http.NewServeMux()
-		loginPath := fmt.Sprintf("/login/%s", idpName)
+		//loginPath := fmt.Sprintf("/login/%s", idpName)
 		loginPathEscaped := fmt.Sprintf("/login/%s", url.PathEscape(idpName))
-		loginHandler.Install(mux, loginPath) // TODO, when escaped, changes anything?
+		loginHandler.Install(mux, loginPathEscaped) // TODO, when escaped, changes anything?
 
 		server := httptest.NewServer(mux)
 		defer server.Close()
